@@ -1,0 +1,16 @@
+{
+	"[go]": {
+		"editor.formatOnSave": true,
+		"editor.codeActionsOnSave": {
+			"source.organizeImports": "explicit"
+		}
+	},
+	"gopls": {
+		"ui.semanticTokens": true,
+		"formatting.local": "github.com/imdatngo/slog-gorm"
+	},
+	"go.formatTool": "default",
+	"go.generateTestsFlags": ["-template", "testify"],
+	"go.lintTool": "staticcheck",
+	"go.testFlags": ["-failfast", "-v"]
+}
