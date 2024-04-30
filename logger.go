@@ -83,10 +83,10 @@ func (l *logger) Trace(ctx context.Context, begin time.Time, fc func() (string, 
 		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), err, false)
 		l.log(ctx, slog.LevelError, "Query ERROR", attrs...)
 	case l.slowThreshold != 0 && elapsed > l.slowThreshold && l.enabled(ctx, slog.LevelWarn):
-		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), err, true)
+		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), nil, true)
 		l.log(ctx, slog.LevelWarn, "Query SLOW", attrs...)
 	case l.traceAll && l.enabled(ctx, slog.LevelInfo):
-		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), err, false)
+		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), nil, false)
 		l.log(ctx, slog.LevelInfo, "Query OK", attrs...)
 	}
 }

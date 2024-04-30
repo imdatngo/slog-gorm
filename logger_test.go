@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
 
@@ -281,6 +282,42 @@ func Test_logger(t *testing.T) {
 			},
 		},
 		{
+			name: "trace slow should not log error if not asked",
+			config: func(h slog.Handler) *config {
+				return NewConfig(h).WithIgnoreRecordNotFoundError(true)
+			},
+			log: func(l *logger) {
+				fc := func() (string, int64) {
+					return "SELECT * FROM users", 0
+				}
+				l.Trace(context.Background(), time.Now().Add(-1*time.Second), fc, gorm.ErrRecordNotFound)
+			},
+			checks: []check{
+				hasAttr(slog.LevelKey, "WARN"),
+				hasAttr(slog.MessageKey, "Query SLOW"),
+				missingKey("error"),
+				hasAttr("query", "SELECT * FROM users"),
+			},
+		},
+		{
+			name: "trace all should not log error if not asked",
+			config: func(h slog.Handler) *config {
+				return NewConfig(h).WithIgnoreRecordNotFoundError(true).WithTraceAll(true)
+			},
+			log: func(l *logger) {
+				fc := func() (string, int64) {
+					return "SELECT * FROM users", 0
+				}
+				l.Trace(context.Background(), time.Now().Add(-10*time.Millisecond), fc, gorm.ErrRecordNotFound)
+			},
+			checks: []check{
+				hasAttr(slog.LevelKey, "INFO"),
+				hasAttr(slog.MessageKey, "Query OK"),
+				missingKey("error"),
+				hasAttr("query", "SELECT * FROM users"),
+			},
+		},
+		{
 			name: "full source path",
 			config: func(h slog.Handler) *config {
 				return NewConfig(h).WithTraceAll(true).WithFullSourcePath(true)
@@ -376,6 +413,15 @@ func hasKey(key string) check {
 	return func(m map[string]any) string {
 		if _, ok := m[key]; !ok {
 			return fmt.Sprintf("missing key %q", key)
+		}
+		return ""
+	}
+}
+
+func missingKey(key string) check {
+	return func(m map[string]any) string {
+		if _, ok := m[key]; ok {
+			return fmt.Sprintf("unexpected key %q", key)
 		}
 		return ""
 	}

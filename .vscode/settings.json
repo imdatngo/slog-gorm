@@ -12,5 +12,5 @@
 	"go.formatTool": "default",
 	"go.generateTestsFlags": ["-template", "testify"],
 	"go.lintTool": "staticcheck",
-	"go.testFlags": ["-failfast", "-v"]
+	"go.testFlags": ["-v"]
 }
