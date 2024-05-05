@@ -35,7 +35,7 @@ import (
 // Create new slog-gorm instance with slog.Default()
 glogger := sloggorm.New()
 
-// Globally mode
+// Global mode
 db, err := gorm.Open(sqlite.Open("test.db"), &gorm.Config{
 	Logger: glogger,
 })
@@ -50,26 +50,57 @@ tx.Model(&user).Update("Age", 18)
 // 2024/04/16 07:30:00 WARN Query SLOW duration=133.448µs rows=0 file=main.go:46 slow_threshold=100ns query="UPDATE `users` SET `age`=18 WHERE `id` = 1"
 ```
 
-### With custom config
+### With config
 
 ```go
 // Your slog.Logger instance
 slogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-// with context field and/or group to distinguish with application logs
-slogger = slogger.With(slog.Any("logger", "db"))
+// adding group or field to distinguish with application logs
 // slogger = slogger.WithGroup("db")
+// slogger = slogger.With(slog.String("logger", "db"))
 
 // Create new slog-gorm instance with custom config
 cfg := sloggorm.NewConfig(slogger.Handler()).
 	WithSlowThreshold(time.Second).
 	WithIgnoreRecordNotFoundError(true).
-	WithTraceAll(true).
-	WithContextKeys(map[string]string{"req_id": "X-Request-ID"})
+	WithTraceAll(true)
 glogger := sloggorm.NewWithConfig(cfg)
 
 // Sample output:
-// time=2024-04-16T07:35:40.696Z level=INFO msg="Query OK" logger=db req_id=01ARZ3NDEKTSV4RRFFQ69G5FAV duration=130.659µs rows=1 file=main.go:45 query="SELECT * FROM `users` WHERE `users`.`id` = 1 ORDER BY `users`.`id` LIMIT 1"
-// time=2024-04-16T07:35:40.697Z level=INFO msg="Query OK" logger=db req_id=01ARZ3NDEKTSV4RRFFQ69G5FAV duration=940.445µs rows=1 file=main.go:46 query="UPDATE `users` SET `age`=18 WHERE `id` = 1"
+// time=2024-04-16T07:35:40.696Z level=INFO msg="Query OK" duration=130.659µs rows=1 file=main.go:45 query="SELECT * FROM `users` WHERE `users`.`id` = 1 ORDER BY `users`.`id` LIMIT 1"
+// time=2024-04-16T07:35:40.697Z level=INFO msg="Query OK" duration=940.445µs rows=1 file=main.go:46 query="UPDATE `users` SET `age`=18 WHERE `id` = 1"
+```
+
+### With Context
+
+When you got the context keys:
+
+```go
+cfg.WithContextKeys(map[string]any{
+	"trace_id": pkg.TraceIdCtxKey,
+	"span_id":  pkg.SpanIdCtxKey,
+	"service": "serviceName", // built-in type is not recommended though
+})
+```
+
+or when some packages have it own extractor:
+
+```go
+cfg.WithContextExtractor(func(ctx context.Context) []slog.Attr {
+	tracer := pkg.FromContext(ctx)
+	return []slog.Attr{
+		// group the context fields as needed
+		slog.Group("ctx",
+			slog.String("trace_id", tracer.TraceId),
+			slog.String("span_id", tracer.SpanId),
+			slog.String("service", mypkg.FromCtx(ctx)),
+		),
+	}
+})
+
+// Sample output:
+// time=2024-05-05T22:23:24.345Z level=INFO msg="Query OK" ctx.trace_id=014KG56DC01GG4TEB01ZEX7WFJ ctx.span_id=014KG56DC01GG4TEB022Z17KKS ctx.service=users duration=139.007µs rows=1 file=main.go:69 query="SELECT * FROM `users` WHERE `users`.`id` = 1 ORDER BY `users`.`id` LIMIT 1"
+// time=2024-05-05T22:23:24.678Z level=INFO msg="Query OK" ctx.trace_id=014KG56DC01GG4TEB01ZEX7WFJ ctx.span_id=014KG56DC01GG4TEB022Z17KKS ctx.service=users duration=915.688µs rows=1 file=main.go:70 query="UPDATE `users` SET `age`=18 WHERE `id` = 1"
 ```
 
 ### Silence!

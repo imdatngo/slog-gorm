@@ -35,7 +35,7 @@ func TestNew(t *testing.T) {
 			slowThreshold:      200 * time.Millisecond,
 			errorField:         "error",
 			slowThresholdField: "slow_threshold",
-			contextKeys:        map[string]string{},
+			contextKeys:        map[string]any{},
 			queryField:         "query",
 			durationField:      "duration",
 			rowsField:          "rows",
@@ -54,7 +54,7 @@ func TestNewWithConfig(t *testing.T) {
 			parameterizedQueries:      true,
 			silent:                    true,
 			traceAll:                  true,
-			contextKeys:               map[string]string{"req_id": "id"},
+			contextKeys:               map[string]any{"req_id": "id"},
 			errorField:                "err",
 			slowThresholdField:        "threshold",
 			queryField:                "sql",
@@ -70,7 +70,7 @@ func TestNewWithConfig(t *testing.T) {
 			WithParameterizedQueries(true).
 			WithSilent(true).
 			WithTraceAll(true).
-			WithContextKeys(map[string]string{"req_id": "id"}).
+			WithContextKeys(map[string]any{"req_id": "id"}).
 			WithErrorField("err").
 			WithSlowThresholdField("threshold").
 			WithQueryField("sql").
@@ -156,11 +156,11 @@ func Test_logger(t *testing.T) {
 		{
 			name: "with context key",
 			config: func(h slog.Handler) *config {
-				return NewConfig(h).WithContextKeys(map[string]string{"req_id": "id"})
+				return NewConfig(h).WithContextKeys(map[string]any{"req_id": ctxKey("id")})
 			},
 			log: func(l *logger) {
 				ctx := context.Background()
-				ctx = context.WithValue(ctx, "id", "123")
+				ctx = context.WithValue(ctx, ctxKey("id"), "123")
 				l.Info(ctx, "hello world!")
 			},
 			checks: []check{
@@ -168,6 +168,30 @@ func Test_logger(t *testing.T) {
 				hasAttr(slog.LevelKey, "INFO"),
 				hasAttr(slog.MessageKey, "hello world!"),
 				hasAttr("req_id", "123"),
+			},
+		},
+		{
+			name: "with context extractor",
+			config: func(h slog.Handler) *config {
+				return NewConfig(h).WithContextExtractor(func(ctx context.Context) []slog.Attr {
+					return []slog.Attr{
+						slog.String("trace_id", ctx.Value(ctxKey("trace_id")).(string)),
+						slog.String("span_id", ctx.Value(ctxKey("span_id")).(string)),
+					}
+				})
+			},
+			log: func(l *logger) {
+				ctx := context.Background()
+				ctx = context.WithValue(ctx, ctxKey("trace_id"), "abc123")
+				ctx = context.WithValue(ctx, ctxKey("span_id"), "112233")
+				l.Info(ctx, "tracing")
+			},
+			checks: []check{
+				hasKey(slog.TimeKey),
+				hasAttr(slog.LevelKey, "INFO"),
+				hasAttr(slog.MessageKey, "tracing"),
+				hasAttr("trace_id", "abc123"),
+				hasAttr("span_id", "112233"),
 			},
 		},
 		{
@@ -397,6 +421,8 @@ func Test_logger_ParamsFilter(t *testing.T) {
 		})
 	}
 }
+
+type ctxKey string
 
 type check func(map[string]any) (err string)
 

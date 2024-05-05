@@ -21,7 +21,7 @@ func TestNewConfig(t *testing.T) {
 			slowThreshold:      200 * time.Millisecond,
 			errorField:         "error",
 			slowThresholdField: "slow_threshold",
-			contextKeys:        map[string]string{},
+			contextKeys:        map[string]any{},
 			queryField:         "query",
 			durationField:      "duration",
 			rowsField:          "rows",
@@ -32,7 +32,7 @@ func TestNewConfig(t *testing.T) {
 
 func Test_config_clone(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
-		cfg := NewConfig(slog.Default().Handler()).WithContextKeys(map[string]string{"context": "key"})
+		cfg := NewConfig(slog.Default().Handler()).WithContextKeys(map[string]any{"context": "key"})
 		newCfg := cfg.clone()
 		assert.NotSame(t, cfg, newCfg)
 		assert.Same(t, cfg.slogHandler, newCfg.slogHandler)

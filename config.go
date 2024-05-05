@@ -1,6 +1,7 @@
 package sloggorm
 
 import (
+	"context"
 	"log/slog"
 	"time"
 )
@@ -17,7 +18,7 @@ func NewConfig(h slog.Handler) *config {
 		parameterizedQueries:      false,
 		silent:                    false,
 		traceAll:                  false,
-		contextKeys:               map[string]string{},
+		contextKeys:               map[string]any{},
 		errorField:                "error",
 		slowThresholdField:        "slow_threshold",
 		queryField:                "query",
@@ -37,7 +38,9 @@ type config struct {
 	parameterizedQueries      bool
 	silent                    bool
 	traceAll                  bool
-	contextKeys               map[string]string
+
+	contextKeys      map[string]any
+	contextExtractor func(ctx context.Context) []slog.Attr
 
 	errorField         string
 	slowThresholdField string
@@ -51,7 +54,7 @@ type config struct {
 // clone returns a new config with same values
 func (c *config) clone() *config {
 	nc := *c
-	nc.contextKeys = map[string]string{}
+	nc.contextKeys = map[string]any{}
 	for k, v := range c.contextKeys {
 		nc.contextKeys[k] = v
 	}
@@ -88,11 +91,17 @@ func (c *config) WithTraceAll(v bool) *config {
 	return c
 }
 
-// WithContextKeys includes additional log fields from context
-func (c *config) WithContextKeys(v map[string]string) *config {
-	for k, v := range v {
-		c.contextKeys[k] = v
-	}
+// WithContextKeys to add custom log fields from context by given keys
+//
+// Map keys are the log fields, and map values are the context keys to extract with ctx.Value()
+func (c *config) WithContextKeys(v map[string]any) *config {
+	c.contextKeys = v
+	return c
+}
+
+// WithContextExtractor to add custom log fields extracted from context by given function
+func (c *config) WithContextExtractor(v func(ctx context.Context) []slog.Attr) *config {
+	c.contextExtractor = v
 	return c
 }
 

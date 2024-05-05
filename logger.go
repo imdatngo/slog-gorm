@@ -100,12 +100,12 @@ func (l *logger) ParamsFilter(_ context.Context, sql string, params ...interface
 }
 
 // log adds context attributes and logs a message with the given slog level
-func (l *logger) log(ctx context.Context, level slog.Level, msg string, attrs ...any) {
+func (l *logger) log(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
 	var pcs [1]uintptr
 	// skip [runtime.Callers, this function, this function's caller]
 	runtime.Callers(3, pcs[:])
 	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
-	r.Add(attrs...)
+	r.AddAttrs(attrs...)
 
 	if ctx == nil {
 		ctx = context.Background()
@@ -113,11 +113,10 @@ func (l *logger) log(ctx context.Context, level slog.Level, msg string, attrs ..
 	_ = l.slogHandler.Handle(ctx, r)
 }
 
-func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func() (string, int64), file string, err error, slow bool) []any {
+func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func() (string, int64), file string, err error, slow bool) []slog.Attr {
 	sql, rows := fc()
 
-	attrs := make([]any, 0, len(l.contextKeys)+5) // max 5 fixed attrs
-	attrs = append(attrs, l.contextAttrs(ctx)...)
+	attrs := l.contextAttrs(ctx)
 
 	if l.durationField != "" {
 		attrs = append(attrs, slog.Duration(l.durationField, elapsed))
@@ -137,7 +136,7 @@ func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func(
 	} else if slow && l.slowThresholdField != "" {
 		attrs = append(attrs, slog.Duration(l.slowThresholdField, l.slowThreshold))
 	}
-	if l.queryField != "" { // really?
+	if l.queryField != "" {
 		attrs = append(attrs, slog.String(l.queryField, sql))
 	}
 
@@ -145,13 +144,17 @@ func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func(
 }
 
 // contextAttrs extracts attributes from context
-func (l *logger) contextAttrs(ctx context.Context) []any {
+func (l *logger) contextAttrs(ctx context.Context) []slog.Attr {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	attrs := make([]any, 0, len(l.contextKeys))
-	for ak, cv := range l.contextKeys {
-		if val := ctx.Value(cv); val != nil {
+
+	var attrs []slog.Attr
+	if l.contextExtractor != nil {
+		attrs = l.contextExtractor(ctx)
+	}
+	for ak, ck := range l.contextKeys {
+		if val := ctx.Value(ck); val != nil {
 			attrs = append(attrs, slog.Any(ak, val))
 		}
 	}
