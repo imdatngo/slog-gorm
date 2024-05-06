@@ -55,6 +55,7 @@ func TestNewWithConfig(t *testing.T) {
 			silent:                    true,
 			traceAll:                  true,
 			contextKeys:               map[string]any{"req_id": "id"},
+			groupKey:                  "db",
 			errorField:                "err",
 			slowThresholdField:        "threshold",
 			queryField:                "sql",
@@ -71,6 +72,7 @@ func TestNewWithConfig(t *testing.T) {
 			WithSilent(true).
 			WithTraceAll(true).
 			WithContextKeys(map[string]any{"req_id": "id"}).
+			WithGroupKey("db").
 			WithErrorField("err").
 			WithSlowThresholdField("threshold").
 			WithQueryField("sql").
@@ -306,6 +308,29 @@ func Test_logger(t *testing.T) {
 			},
 		},
 		{
+			name: "trace all with group",
+			config: func(h slog.Handler) *config {
+				return NewConfig(h).WithTraceAll(true).WithGroupKey("db")
+			},
+			log: func(l *logger) {
+				fc := func() (string, int64) {
+					return "SELECT * FROM profiles", 0
+				}
+				l.Trace(context.Background(), time.Now().Add(-10*time.Millisecond), fc, nil)
+			},
+			checks: []check{
+				hasKey(slog.TimeKey),
+				hasAttr(slog.LevelKey, "INFO"),
+				hasAttr(slog.MessageKey, "Query OK"),
+				hasGroupAttrs("db", []check{
+					elapsedApprox("duration", 10*time.Millisecond),
+					hasAttr("rows", float64(0)), // json encoded to float64!
+					hasSource("file", 9, false),
+					hasAttr("query", "SELECT * FROM profiles"),
+				}),
+			},
+		},
+		{
 			name: "trace slow should not log error if not asked",
 			config: func(h slog.Handler) *config {
 				return NewConfig(h).WithIgnoreRecordNotFoundError(true)
@@ -474,6 +499,21 @@ func hasAttr(key string, wantVal any) check {
 		gotVal := m[key]
 		if !reflect.DeepEqual(gotVal, wantVal) {
 			return fmt.Sprintf("%q: got %#v, want %#v", key, gotVal, wantVal)
+		}
+		return ""
+	}
+}
+
+func hasGroupAttrs(key string, checks []check) check {
+	return func(m map[string]any) string {
+		if s := hasKey(key)(m); s != "" {
+			return s
+		}
+		gotGroup := m[key].(map[string]any)
+		for _, check := range checks {
+			if err := check(gotGroup); err != "" {
+				return err
+			}
 		}
 		return ""
 	}

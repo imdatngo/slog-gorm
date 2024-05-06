@@ -19,6 +19,8 @@ func NewConfig(h slog.Handler) *config {
 		silent:                    false,
 		traceAll:                  false,
 		contextKeys:               map[string]any{},
+		contextExtractor:          nil,
+		groupKey:                  "",
 		errorField:                "error",
 		slowThresholdField:        "slow_threshold",
 		queryField:                "query",
@@ -42,6 +44,7 @@ type config struct {
 	contextKeys      map[string]any
 	contextExtractor func(ctx context.Context) []slog.Attr
 
+	groupKey           string
 	errorField         string
 	slowThresholdField string
 	queryField         string
@@ -102,6 +105,12 @@ func (c *config) WithContextKeys(v map[string]any) *config {
 // WithContextExtractor to add custom log fields extracted from context by given function
 func (c *config) WithContextExtractor(v func(ctx context.Context) []slog.Attr) *config {
 	c.contextExtractor = v
+	return c
+}
+
+// WithGroupKey set group name to group all the trace attributes, except the context attributes
+func (c *config) WithGroupKey(v string) *config {
+	c.groupKey = v
 	return c
 }
 

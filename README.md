@@ -55,20 +55,18 @@ tx.Model(&user).Update("Age", 18)
 ```go
 // Your slog.Logger instance
 slogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-// adding group or field to distinguish with application logs
-// slogger = slogger.WithGroup("db")
-// slogger = slogger.With(slog.String("logger", "db"))
 
 // Create new slog-gorm instance with custom config
 cfg := sloggorm.NewConfig(slogger.Handler()).
+	WithGroupKey("db").
 	WithSlowThreshold(time.Second).
 	WithIgnoreRecordNotFoundError(true).
 	WithTraceAll(true)
 glogger := sloggorm.NewWithConfig(cfg)
 
 // Sample output:
-// time=2024-04-16T07:35:40.696Z level=INFO msg="Query OK" duration=130.659µs rows=1 file=main.go:45 query="SELECT * FROM `users` WHERE `users`.`id` = 1 ORDER BY `users`.`id` LIMIT 1"
-// time=2024-04-16T07:35:40.697Z level=INFO msg="Query OK" duration=940.445µs rows=1 file=main.go:46 query="UPDATE `users` SET `age`=18 WHERE `id` = 1"
+// time=2024-04-16T07:35:40.696Z level=INFO msg="Query OK" db.duration=130.659µs db.rows=1 db.file=main.go:45 db.query="SELECT * FROM `users` WHERE `users`.`id` = 1 ORDER BY `users`.`id` LIMIT 1"
+// time=2024-04-16T07:35:40.697Z level=INFO msg="Query OK" db.duration=940.445µs db.rows=1 db.file=main.go:46 db.query="UPDATE `users` SET `age`=18 WHERE `id` = 1"
 ```
 
 ### With Context
@@ -99,8 +97,8 @@ cfg.WithContextExtractor(func(ctx context.Context) []slog.Attr {
 })
 
 // Sample output:
-// time=2024-05-05T22:23:24.345Z level=INFO msg="Query OK" ctx.trace_id=014KG56DC01GG4TEB01ZEX7WFJ ctx.span_id=014KG56DC01GG4TEB022Z17KKS ctx.service=users duration=139.007µs rows=1 file=main.go:69 query="SELECT * FROM `users` WHERE `users`.`id` = 1 ORDER BY `users`.`id` LIMIT 1"
-// time=2024-05-05T22:23:24.678Z level=INFO msg="Query OK" ctx.trace_id=014KG56DC01GG4TEB01ZEX7WFJ ctx.span_id=014KG56DC01GG4TEB022Z17KKS ctx.service=users duration=915.688µs rows=1 file=main.go:70 query="UPDATE `users` SET `age`=18 WHERE `id` = 1"
+// time=2024-05-05T22:23:24.345Z level=INFO msg="Query OK" ctx.trace_id=014KG56DC01GG4TEB01ZEX7WFJ ctx.span_id=014KG56DC01GG4TEB022Z17KKS ctx.service=users db.duration=139.007µs db.rows=1 db.file=main.go:69 db.query="SELECT * FROM `users` WHERE `users`.`id` = 1 ORDER BY `users`.`id` LIMIT 1"
+// time=2024-05-05T22:23:24.678Z level=INFO msg="Query OK" ctx.trace_id=014KG56DC01GG4TEB01ZEX7WFJ ctx.span_id=014KG56DC01GG4TEB022Z17KKS ctx.service=users db.duration=915.688µs db.rows=1 db.file=main.go:70 db.query="UPDATE `users` SET `age`=18 WHERE `id` = 1"
 ```
 
 ### Silence!

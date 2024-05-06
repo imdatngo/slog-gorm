@@ -116,7 +116,7 @@ func (l *logger) log(ctx context.Context, level slog.Level, msg string, attrs ..
 func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func() (string, int64), file string, err error, slow bool) []slog.Attr {
 	sql, rows := fc()
 
-	attrs := l.contextAttrs(ctx)
+	attrs := make([]slog.Attr, 0, 5)
 
 	if l.durationField != "" {
 		attrs = append(attrs, slog.Duration(l.durationField, elapsed))
@@ -140,7 +140,11 @@ func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func(
 		attrs = append(attrs, slog.String(l.queryField, sql))
 	}
 
-	return attrs
+	if l.groupKey != "" {
+		return append(l.contextAttrs(ctx), slog.Attr{Key: l.groupKey, Value: slog.GroupValue(attrs...)})
+	}
+
+	return append(l.contextAttrs(ctx), attrs...)
 }
 
 // contextAttrs extracts attributes from context
