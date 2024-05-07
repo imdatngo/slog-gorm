@@ -46,12 +46,12 @@ func TestNewWithConfig(t *testing.T) {
 			traceAll:                  true,
 			contextKeys:               map[string]any{"req_id": "id"},
 			groupKey:                  "db",
-			errorField:                "err",
-			slowThresholdField:        "threshold",
-			queryField:                "sql",
-			durationField:             "dur",
-			rowsField:                 "count",
-			sourceField:               "src",
+			errorKey:                  "err",
+			slowThresholdKey:          "threshold",
+			queryKey:                  "sql",
+			durationKey:               "dur",
+			rowsKey:                   "count",
+			sourceKey:                 "src",
 			fullSourcePath:            true,
 			okMsg:                     "Yeah!",
 			slowMsg:                   "Hmmm...",
@@ -66,12 +66,12 @@ func TestNewWithConfig(t *testing.T) {
 			WithTraceAll(true).
 			WithContextKeys(map[string]any{"req_id": "id"}).
 			WithGroupKey("db").
-			WithErrorField("err").
-			WithSlowThresholdField("threshold").
-			WithQueryField("sql").
-			WithDurationField("dur").
-			WithRowsField("count").
-			WithSourceField("src").
+			WithErrorKey("err").
+			WithSlowThresholdKey("threshold").
+			WithQueryKey("sql").
+			WithDurationKey("dur").
+			WithRowsKey("count").
+			WithSourceKey("src").
 			WithFullSourcePath(true).
 			WithOkMsg("Yeah!").
 			WithSlowMsg("Hmmm...").

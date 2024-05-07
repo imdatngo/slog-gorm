@@ -17,18 +17,18 @@ func TestNewConfig(t *testing.T) {
 		var cfg *config
 		assert.NotPanics(t, func() { cfg = NewConfig(slog.Default().Handler()) })
 		assert.Equal(t, &config{
-			slogHandler:        slog.Default().Handler(),
-			slowThreshold:      200 * time.Millisecond,
-			errorField:         "error",
-			slowThresholdField: "slow_threshold",
-			contextKeys:        map[string]any{},
-			queryField:         "query",
-			durationField:      "duration",
-			rowsField:          "rows",
-			sourceField:        "file",
-			okMsg:              "Query OK",
-			slowMsg:            "Query SLOW",
-			errorMsg:           "Query ERROR",
+			slogHandler:      slog.Default().Handler(),
+			slowThreshold:    200 * time.Millisecond,
+			errorKey:         "error",
+			slowThresholdKey: "slow_threshold",
+			contextKeys:      map[string]any{},
+			queryKey:         "query",
+			durationKey:      "duration",
+			rowsKey:          "rows",
+			sourceKey:        "file",
+			okMsg:            "Query OK",
+			slowMsg:          "Query SLOW",
+			errorMsg:         "Query ERROR",
 		}, cfg)
 	})
 }
@@ -40,7 +40,7 @@ func Test_config_clone(t *testing.T) {
 		assert.NotSame(t, cfg, newCfg)
 		assert.Same(t, cfg.slogHandler, newCfg.slogHandler)
 		assert.NotSame(t, cfg.slowThreshold, newCfg.slowThreshold)
-		assert.NotSame(t, cfg.errorField, newCfg.errorField)
+		assert.NotSame(t, cfg.errorKey, newCfg.errorKey)
 		assert.NotSame(t, cfg.contextKeys, newCfg.contextKeys)
 	})
 }

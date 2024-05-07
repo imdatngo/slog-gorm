@@ -118,26 +118,26 @@ func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func(
 
 	attrs := make([]slog.Attr, 0, 5)
 
-	if l.durationField != "" {
-		attrs = append(attrs, slog.Duration(l.durationField, elapsed))
+	if l.durationKey != "" {
+		attrs = append(attrs, slog.Duration(l.durationKey, elapsed))
 	}
-	if rows >= 0 && l.rowsField != "" { // rows could be -1
-		attrs = append(attrs, slog.Int64(l.rowsField, rows))
+	if rows >= 0 && l.rowsKey != "" { // rows could be -1
+		attrs = append(attrs, slog.Int64(l.rowsKey, rows))
 	}
-	if l.sourceField != "" {
+	if l.sourceKey != "" {
 		if l.fullSourcePath {
-			attrs = append(attrs, slog.String(l.sourceField, file))
+			attrs = append(attrs, slog.String(l.sourceKey, file))
 		} else {
-			attrs = append(attrs, slog.String(l.sourceField, path.Base(file)))
+			attrs = append(attrs, slog.String(l.sourceKey, path.Base(file)))
 		}
 	}
-	if err != nil && l.errorField != "" {
-		attrs = append(attrs, slog.Any(l.errorField, err))
-	} else if slow && l.slowThresholdField != "" {
-		attrs = append(attrs, slog.Duration(l.slowThresholdField, l.slowThreshold))
+	if err != nil && l.errorKey != "" {
+		attrs = append(attrs, slog.Any(l.errorKey, err))
+	} else if slow && l.slowThresholdKey != "" {
+		attrs = append(attrs, slog.Duration(l.slowThresholdKey, l.slowThreshold))
 	}
-	if l.queryField != "" {
-		attrs = append(attrs, slog.String(l.queryField, sql))
+	if l.queryKey != "" {
+		attrs = append(attrs, slog.String(l.queryKey, sql))
 	}
 
 	if l.groupKey != "" {

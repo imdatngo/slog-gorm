@@ -8,7 +8,7 @@
 [![codecov](https://codecov.io/gh/imdatngo/slog-gorm/graph/badge.svg?token=KM0Y198PUH)](https://codecov.io/gh/imdatngo/slog-gorm)
 [![License](https://img.shields.io/github/license/imdatngo/slog-gorm)](./LICENSE)
 
-slog handler for [Gorm](https://github.com/go-gorm/gorm), inspired by [orandin/slog-gorm](https://github.com/orandin/slog-gorm) with my own ideas to tailor it to my specific needs.
+[Gorm Logger](https://gorm.io/docs/logger.html) implemented with slog, inspired by [orandin/slog-gorm](https://github.com/orandin/slog-gorm) with my own ideas to tailor it to my specific needs.
 
 ## 🚀 Install
 
@@ -87,7 +87,7 @@ or when some packages have it own extractor:
 cfg.WithContextExtractor(func(ctx context.Context) []slog.Attr {
 	tracer := pkg.FromContext(ctx)
 	return []slog.Attr{
-		// group the context fields as needed
+		// group the context attributes as needed
 		slog.Group("ctx",
 			slog.String("trace_id", tracer.TraceId),
 			slog.String("span_id", tracer.SpanId),
