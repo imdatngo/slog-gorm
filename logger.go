@@ -81,13 +81,13 @@ func (l *logger) Trace(ctx context.Context, begin time.Time, fc func() (string, 
 	switch {
 	case err != nil && l.enabled(ctx, slog.LevelError) && (!errors.Is(err, gorm.ErrRecordNotFound) || !l.ignoreRecordNotFoundError):
 		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), err, false)
-		l.log(ctx, slog.LevelError, "Query ERROR", attrs...)
+		l.log(ctx, slog.LevelError, l.errorMsg, attrs...)
 	case l.slowThreshold != 0 && elapsed > l.slowThreshold && l.enabled(ctx, slog.LevelWarn):
 		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), nil, true)
-		l.log(ctx, slog.LevelWarn, "Query SLOW", attrs...)
+		l.log(ctx, slog.LevelWarn, l.slowMsg, attrs...)
 	case l.traceAll && l.enabled(ctx, slog.LevelInfo):
 		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), nil, false)
-		l.log(ctx, slog.LevelInfo, "Query OK", attrs...)
+		l.log(ctx, slog.LevelInfo, l.okMsg, attrs...)
 	}
 }
 

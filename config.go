@@ -28,6 +28,9 @@ func NewConfig(h slog.Handler) *config {
 		rowsField:                 "rows",
 		sourceField:               "file",
 		fullSourcePath:            false,
+		okMsg:                     "Query OK",
+		slowMsg:                   "Query SLOW",
+		errorMsg:                  "Query ERROR",
 	}
 }
 
@@ -52,6 +55,10 @@ type config struct {
 	rowsField          string
 	sourceField        string
 	fullSourcePath     bool
+
+	okMsg    string
+	slowMsg  string
+	errorMsg string
 }
 
 // clone returns a new config with same values
@@ -153,5 +160,23 @@ func (c *config) WithSourceField(v string) *config {
 // WithFullSourcePath whether to include full path in source field or just the file name. Default false
 func (c *config) WithFullSourcePath(v bool) *config {
 	c.fullSourcePath = v
+	return c
+}
+
+// WithOkMsg changes log message for successful query. Default "Query OK"
+func (c *config) WithOkMsg(v string) *config {
+	c.okMsg = v
+	return c
+}
+
+// WithSlowMsg changes log message for slow query. Default "Query SLOW"
+func (c *config) WithSlowMsg(v string) *config {
+	c.slowMsg = v
+	return c
+}
+
+// WithErrorMsg changes log message for failed query. Default "Query ERROR"
+func (c *config) WithErrorMsg(v string) *config {
+	c.errorMsg = v
 	return c
 }

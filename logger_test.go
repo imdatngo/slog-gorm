@@ -28,19 +28,9 @@ func init() {
 }
 
 func TestNew(t *testing.T) {
-	t.Run("default config", func(t *testing.T) {
+	t.Run("default handler", func(t *testing.T) {
 		l := New()
-		assert.Equal(t, &config{
-			slogHandler:        slog.Default().Handler(),
-			slowThreshold:      200 * time.Millisecond,
-			errorField:         "error",
-			slowThresholdField: "slow_threshold",
-			contextKeys:        map[string]any{},
-			queryField:         "query",
-			durationField:      "duration",
-			rowsField:          "rows",
-			sourceField:        "file",
-		}, l.config)
+		assert.Equal(t, slog.Default().Handler(), l.slogHandler)
 	})
 }
 
@@ -63,6 +53,9 @@ func TestNewWithConfig(t *testing.T) {
 			rowsField:                 "count",
 			sourceField:               "src",
 			fullSourcePath:            true,
+			okMsg:                     "Yeah!",
+			slowMsg:                   "Hmmm...",
+			errorMsg:                  "Shit!!",
 		}
 
 		cfg := NewConfig(h).
@@ -79,7 +72,10 @@ func TestNewWithConfig(t *testing.T) {
 			WithDurationField("dur").
 			WithRowsField("count").
 			WithSourceField("src").
-			WithFullSourcePath(true)
+			WithFullSourcePath(true).
+			WithOkMsg("Yeah!").
+			WithSlowMsg("Hmmm...").
+			WithErrorMsg("Shit!!")
 		l := NewWithConfig(cfg)
 		assert.Equal(t, want, l.config)
 	})

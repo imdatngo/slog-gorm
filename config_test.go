@@ -26,6 +26,9 @@ func TestNewConfig(t *testing.T) {
 			durationField:      "duration",
 			rowsField:          "rows",
 			sourceField:        "file",
+			okMsg:              "Query OK",
+			slowMsg:            "Query SLOW",
+			errorMsg:           "Query ERROR",
 		}, cfg)
 	})
 }
