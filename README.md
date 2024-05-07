@@ -13,7 +13,7 @@
 ## 🚀 Install
 
 ```sh
-go get github.com/imdatngo/slog-gorm
+go get github.com/imdatngo/slog-gorm/v2
 ```
 
 **Compatibility**: go >= 1.21
@@ -29,7 +29,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	sloggorm "github.com/imdatngo/slog-gorm"
+	sloggorm "github.com/imdatngo/slog-gorm/v2"
 )
 
 // Create new slog-gorm instance with slog.Default()

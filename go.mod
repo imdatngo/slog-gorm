@@ -1,4 +1,4 @@
-module github.com/imdatngo/slog-gorm
+module github.com/imdatngo/slog-gorm/v2
 
 go 1.22.2
 

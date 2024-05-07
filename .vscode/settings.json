@@ -7,7 +7,7 @@
 	},
 	"gopls": {
 		"ui.semanticTokens": true,
-		"formatting.local": "github.com/imdatngo/slog-gorm"
+		"formatting.local": "github.com/imdatngo/slog-gorm/v2"
 	},
 	"go.formatTool": "default",
 	"go.generateTestsFlags": ["-template", "testify"],
