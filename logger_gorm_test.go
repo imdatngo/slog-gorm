@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"gorm.io/gorm/utils/tests"
 )
 
 type gormUser struct {
@@ -35,14 +35,17 @@ func lastLog(t *testing.T, buf *bytes.Buffer) map[string]any {
 // exercised: gorm's callbacks calling Trace, and utils.FileWithLineNum skipping
 // gorm's own frames to land on this file. This guards the stack-depth invariant
 // that unit tests calling Trace directly cannot fully cover.
+//
+// It uses gorm's own DummyDialector with DryRun sessions: gorm builds the SQL and
+// runs its full callback chain (including the Trace call) without executing
+// anything, so no database driver dependency is needed. The price is that nothing
+// really runs — error paths and row counts are covered by the unit tests instead.
 func Test_logger_withGorm(t *testing.T) {
 	var buf bytes.Buffer
 	l := NewWithConfig(NewConfig(slog.NewJSONHandler(&buf, nil)).WithTraceAll(true))
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: l})
+	db, err := gorm.Open(tests.DummyDialector{}, &gorm.Config{Logger: l, DryRun: true})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&gormUser{}))
-	buf.Reset()
 
 	t.Run("successful query", func(t *testing.T) {
 		_, file, line, _ := runtime.Caller(0)
@@ -51,18 +54,8 @@ func Test_logger_withGorm(t *testing.T) {
 		assert.Equal(t, "INFO", m[slog.LevelKey])
 		assert.Equal(t, "Query OK", m[slog.MessageKey])
 		assert.Equal(t, path.Base(file)+":"+strconv.Itoa(line+1), m["file"])
-		assert.Equal(t, float64(1), m["rows"])
-		assert.Contains(t, m["query"], "INSERT INTO `gorm_users`")
-	})
-
-	t.Run("record not found", func(t *testing.T) {
-		err := db.First(&gormUser{}, 12345).Error
-		assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-		m := lastLog(t, &buf)
-		assert.Equal(t, "ERROR", m[slog.LevelKey])
-		assert.Equal(t, "Query ERROR", m[slog.MessageKey])
-		assert.Equal(t, "record not found", m["error"])
-		assert.Contains(t, m["file"], path.Base("logger_gorm_test.go"))
+		assert.Contains(t, m["query"], "INSERT INTO")
+		assert.Contains(t, m["query"], "gorm_users")
 	})
 
 	t.Run("debug session traces with parent logger silent trace-all off", func(t *testing.T) {
