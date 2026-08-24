@@ -45,7 +45,7 @@ func (l *logger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 	}
 
 	// clone logger for session mode
-	nc := l.config.clone()
+	nc := l.clone()
 	nl := NewWithConfig(nc.WithTraceAll(level == gormlogger.Info).WithSilent(level == gormlogger.Silent))
 	return nl
 }

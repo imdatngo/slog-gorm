@@ -391,7 +391,7 @@ func Test_logger(t *testing.T) {
 			got := result(t)
 			for _, check := range tt.checks {
 				if err := check(got); err != "" {
-					t.Errorf(err)
+					t.Error(err)
 				}
 			}
 		})

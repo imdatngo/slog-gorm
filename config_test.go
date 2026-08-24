@@ -39,8 +39,11 @@ func Test_config_clone(t *testing.T) {
 		newCfg := cfg.clone()
 		assert.NotSame(t, cfg, newCfg)
 		assert.Same(t, cfg.slogHandler, newCfg.slogHandler)
-		assert.NotSame(t, cfg.slowThreshold, newCfg.slowThreshold)
-		assert.NotSame(t, cfg.errorKey, newCfg.errorKey)
-		assert.NotSame(t, cfg.contextKeys, newCfg.contextKeys)
+		assert.Equal(t, cfg.slowThreshold, newCfg.slowThreshold)
+		assert.Equal(t, cfg.errorKey, newCfg.errorKey)
+		// contextKeys is deep copied: same contents, independent storage
+		assert.Equal(t, cfg.contextKeys, newCfg.contextKeys)
+		newCfg.contextKeys["added"] = "value"
+		assert.NotContains(t, cfg.contextKeys, "added")
 	})
 }
