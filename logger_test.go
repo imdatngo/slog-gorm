@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path"
@@ -30,7 +31,7 @@ func init() {
 func TestNew(t *testing.T) {
 	t.Run("default handler", func(t *testing.T) {
 		l := New()
-		assert.Equal(t, slog.Default().Handler(), l.slogHandler)
+		assert.Equal(t, slog.Default().Handler(), l.cfg.slogHandler)
 	})
 }
 
@@ -77,7 +78,7 @@ func TestNewWithConfig(t *testing.T) {
 			WithSlowMsg("Hmmm...").
 			WithErrorMsg("Shit!!")
 		l := NewWithConfig(cfg)
-		assert.Equal(t, want, l.Config)
+		assert.Equal(t, want, l.cfg)
 	})
 
 	t.Run("panic with nil config", func(t *testing.T) {
@@ -89,9 +90,9 @@ func TestNewWithConfig(t *testing.T) {
 		l1 := NewWithConfig(cfg)
 		cfg.WithSilent(true).WithContextKeys(map[string]any{"req_id": "id"})
 		l2 := NewWithConfig(cfg)
-		assert.False(t, l1.silent)
-		assert.Empty(t, l1.contextKeys)
-		assert.True(t, l2.silent)
+		assert.False(t, l1.cfg.silent)
+		assert.Empty(t, l1.cfg.contextKeys)
+		assert.True(t, l2.cfg.silent)
 	})
 }
 
@@ -100,49 +101,49 @@ func Test_logger_LogMode(t *testing.T) {
 		l := New()
 		nl := l.LogMode(gormlogger.Silent).(*Logger)
 		assert.NotSame(t, l, nl)
-		assert.Equal(t, false, l.traceAll)
-		assert.Equal(t, false, l.silent)
-		assert.Equal(t, false, nl.traceAll)
-		assert.Equal(t, true, nl.silent)
+		assert.Equal(t, false, l.cfg.traceAll)
+		assert.Equal(t, false, l.cfg.silent)
+		assert.Equal(t, false, nl.cfg.traceAll)
+		assert.Equal(t, true, nl.cfg.silent)
 	})
 	t.Run("Info", func(t *testing.T) {
 		l := New()
 		nl := l.LogMode(gormlogger.Info).(*Logger)
 		assert.NotSame(t, l, nl)
-		assert.Equal(t, false, l.traceAll)
-		assert.Equal(t, false, l.silent)
-		assert.Equal(t, true, nl.traceAll)
-		assert.Equal(t, false, nl.silent)
+		assert.Equal(t, false, l.cfg.traceAll)
+		assert.Equal(t, false, l.cfg.silent)
+		assert.Equal(t, true, nl.cfg.traceAll)
+		assert.Equal(t, false, nl.cfg.silent)
 	})
 	t.Run("Warn", func(t *testing.T) {
 		l := New()
 		nl := l.LogMode(gormlogger.Warn).(*Logger)
 		assert.Same(t, l, nl)
-		assert.Equal(t, false, nl.traceAll)
-		assert.Equal(t, false, nl.silent)
+		assert.Equal(t, false, nl.cfg.traceAll)
+		assert.Equal(t, false, nl.cfg.silent)
 	})
 	t.Run("Error", func(t *testing.T) {
 		l := New()
 		nl := l.LogMode(gormlogger.Error).(*Logger)
 		assert.Same(t, l, nl)
-		assert.Equal(t, false, nl.traceAll)
-		assert.Equal(t, false, nl.silent)
+		assert.Equal(t, false, nl.cfg.traceAll)
+		assert.Equal(t, false, nl.cfg.silent)
 	})
 	t.Run("Warn un-silences a silent logger", func(t *testing.T) {
 		l := NewWithConfig(NewConfig(slog.Default().Handler()).WithSilent(true).WithTraceAll(true))
 		nl := l.LogMode(gormlogger.Warn).(*Logger)
 		assert.NotSame(t, l, nl)
-		assert.Equal(t, true, l.silent)
-		assert.Equal(t, false, nl.silent)
-		assert.Equal(t, false, nl.traceAll)
+		assert.Equal(t, true, l.cfg.silent)
+		assert.Equal(t, false, nl.cfg.silent)
+		assert.Equal(t, false, nl.cfg.traceAll)
 	})
 	t.Run("Error un-silences a silent logger", func(t *testing.T) {
 		l := NewWithConfig(NewConfig(slog.Default().Handler()).WithSilent(true))
 		nl := l.LogMode(gormlogger.Error).(*Logger)
 		assert.NotSame(t, l, nl)
-		assert.Equal(t, true, l.silent)
-		assert.Equal(t, false, nl.silent)
-		assert.Equal(t, false, nl.traceAll)
+		assert.Equal(t, true, l.cfg.silent)
+		assert.Equal(t, false, nl.cfg.silent)
+		assert.Equal(t, false, nl.cfg.traceAll)
 	})
 }
 
@@ -514,7 +515,7 @@ func Test_logger_ParamsFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			l := &Logger{
-				Config: &Config{parameterizedQueries: tt.parameterizedQueries},
+				cfg: &Config{parameterizedQueries: tt.parameterizedQueries},
 			}
 			gotSql, gotVars := l.ParamsFilter(context.Background(), tt.args.sql, tt.args.params...)
 			assert.Equal(t, tt.wantSql, gotSql)
@@ -530,6 +531,52 @@ type ctxReadingHandler struct{ slog.Handler }
 func (h ctxReadingHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
 	_ = ctx.Value(ctxKey("k"))
 	return h.Handler.Enabled(ctx, lvl)
+}
+
+// Test_logger_Trace_lazySQL guards the core promise: fc (SQL rendering) is never
+// invoked for a query that will not be logged.
+func Test_logger_Trace_lazySQL(t *testing.T) {
+	called := false
+	fc := func() (string, int64) {
+		called = true
+		return "SELECT 1", 1
+	}
+
+	t.Run("fast successful query, level above info", func(t *testing.T) {
+		h := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn})
+		l := NewWithConfig(NewConfig(h).WithTraceAll(true))
+		l.Trace(context.Background(), time.Now(), fc, nil)
+		assert.False(t, called)
+	})
+
+	t.Run("silent logger drops even errors", func(t *testing.T) {
+		h := slog.NewJSONHandler(io.Discard, nil)
+		l := NewWithConfig(NewConfig(h).WithSilent(true))
+		l.Trace(context.Background(), time.Now().Add(-time.Minute), fc, fmt.Errorf("boom"))
+		assert.False(t, called)
+	})
+}
+
+func BenchmarkTrace(b *testing.B) {
+	fc := func() (string, int64) {
+		return "SELECT * FROM users WHERE id = 1", 1
+	}
+	b.Run("dropped", func(b *testing.B) {
+		h := slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelWarn})
+		l := NewWithConfig(NewConfig(h).WithTraceAll(true))
+		b.ReportAllocs()
+		for b.Loop() {
+			l.Trace(context.Background(), time.Now(), fc, nil)
+		}
+	})
+	b.Run("emitted", func(b *testing.B) {
+		h := slog.NewJSONHandler(io.Discard, nil)
+		l := NewWithConfig(NewConfig(h).WithTraceAll(true))
+		b.ReportAllocs()
+		for b.Loop() {
+			l.Trace(context.Background(), time.Now(), fc, nil)
+		}
+	})
 }
 
 func Test_logger_nilContext(t *testing.T) {

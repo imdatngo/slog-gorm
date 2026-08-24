@@ -32,13 +32,15 @@ func NewWithConfig(config *Config) *Logger {
 		panic("nil config")
 	}
 	return &Logger{
-		config.clone(),
+		cfg: config.clone(),
 	}
 }
 
 // Logger is a gorm logger.Interface implementation backed by a slog.Handler.
+//
+// Its configuration is fixed at construction; to change it, build a new logger.
 type Logger struct {
-	*Config
+	cfg *Config
 }
 
 // ensure our logger implements gormlogger.Interface
@@ -52,13 +54,13 @@ func (l *Logger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 
 	// Note: Error and Warn levels don't change the verbosity as the log level is managed by slog already,
 	// except that they clear silent mode: per gorm's contract they are more verbose than Silent.
-	if (level == gormlogger.Error || level == gormlogger.Warn) && !l.silent {
+	if (level == gormlogger.Error || level == gormlogger.Warn) && !l.cfg.silent {
 		return l
 	}
 
 	// clone logger for session mode
-	nc := l.clone().WithTraceAll(level == gormlogger.Info).WithSilent(level == gormlogger.Silent)
-	return &Logger{nc}
+	nc := l.cfg.clone().WithTraceAll(level == gormlogger.Info).WithSilent(level == gormlogger.Silent)
+	return &Logger{cfg: nc}
 }
 
 // Info logs info message
@@ -93,7 +95,8 @@ func (l *Logger) Error(ctx context.Context, format string, args ...any) {
 
 // Trace logs sql message
 func (l *Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
-	if l.silent {
+	c := l.cfg
+	if c.silent {
 		return
 	}
 	if ctx == nil {
@@ -108,12 +111,12 @@ func (l *Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, 
 		slow     bool
 	)
 	switch {
-	case err != nil && l.enabled(ctx, slog.LevelError) && (!errors.Is(err, gorm.ErrRecordNotFound) || !l.ignoreRecordNotFoundError):
-		level, msg, traceErr = slog.LevelError, l.errorMsg, err
-	case l.slowThreshold != 0 && elapsed > l.slowThreshold && l.enabled(ctx, slog.LevelWarn):
-		level, msg, slow = slog.LevelWarn, l.slowMsg, true
-	case l.traceAll && l.enabled(ctx, slog.LevelInfo):
-		level, msg = slog.LevelInfo, l.okMsg
+	case err != nil && l.enabled(ctx, slog.LevelError) && (!errors.Is(err, gorm.ErrRecordNotFound) || !c.ignoreRecordNotFoundError):
+		level, msg, traceErr = slog.LevelError, c.errorMsg, err
+	case c.slowThreshold != 0 && elapsed > c.slowThreshold && l.enabled(ctx, slog.LevelWarn):
+		level, msg, slow = slog.LevelWarn, c.slowMsg, true
+	case c.traceAll && l.enabled(ctx, slog.LevelInfo):
+		level, msg = slog.LevelInfo, c.okMsg
 	default:
 		return
 	}
@@ -121,7 +124,7 @@ func (l *Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, 
 	// utils.FileWithLineNum walks the stack relative to this frame, so it must be
 	// called directly from Trace, and only when the source attribute is wanted.
 	var file string
-	if l.sourceKey != "" {
+	if c.sourceKey != "" {
 		file = utils.FileWithLineNum()
 	}
 	l.log(ctx, level, msg, l.traceAttrs(ctx, elapsed, fc, file, traceErr, slow)...)
@@ -129,7 +132,7 @@ func (l *Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, 
 
 // ParamsFilter filter params
 func (l *Logger) ParamsFilter(_ context.Context, sql string, params ...interface{}) (string, []interface{}) {
-	if l.parameterizedQueries {
+	if l.cfg.parameterizedQueries {
 		return sql, nil
 	}
 	return sql, params
@@ -143,38 +146,39 @@ func (l *Logger) log(ctx context.Context, level slog.Level, msg string, attrs ..
 	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
 	r.AddAttrs(attrs...)
 
-	_ = l.slogHandler.Handle(ctx, r)
+	_ = l.cfg.slogHandler.Handle(ctx, r)
 }
 
 func (l *Logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func() (string, int64), file string, err error, slow bool) []slog.Attr {
+	c := l.cfg
 	sql, rows := fc()
 
 	attrs := make([]slog.Attr, 0, 5)
 
-	if l.durationKey != "" {
-		attrs = append(attrs, slog.Duration(l.durationKey, elapsed))
+	if c.durationKey != "" {
+		attrs = append(attrs, slog.Duration(c.durationKey, elapsed))
 	}
-	if rows >= 0 && l.rowsKey != "" { // rows could be -1
-		attrs = append(attrs, slog.Int64(l.rowsKey, rows))
+	if rows >= 0 && c.rowsKey != "" { // rows could be -1
+		attrs = append(attrs, slog.Int64(c.rowsKey, rows))
 	}
-	if l.sourceKey != "" {
-		if l.fullSourcePath {
-			attrs = append(attrs, slog.String(l.sourceKey, file))
+	if c.sourceKey != "" {
+		if c.fullSourcePath {
+			attrs = append(attrs, slog.String(c.sourceKey, file))
 		} else {
-			attrs = append(attrs, slog.String(l.sourceKey, path.Base(file)))
+			attrs = append(attrs, slog.String(c.sourceKey, path.Base(file)))
 		}
 	}
-	if err != nil && l.errorKey != "" {
-		attrs = append(attrs, slog.Any(l.errorKey, err))
-	} else if slow && l.slowThresholdKey != "" {
-		attrs = append(attrs, slog.Duration(l.slowThresholdKey, l.slowThreshold))
+	if err != nil && c.errorKey != "" {
+		attrs = append(attrs, slog.Any(c.errorKey, err))
+	} else if slow && c.slowThresholdKey != "" {
+		attrs = append(attrs, slog.Duration(c.slowThresholdKey, c.slowThreshold))
 	}
-	if l.queryKey != "" {
-		attrs = append(attrs, slog.String(l.queryKey, sql))
+	if c.queryKey != "" {
+		attrs = append(attrs, slog.String(c.queryKey, sql))
 	}
 
-	if l.groupKey != "" {
-		return append(l.contextAttrs(ctx), slog.Attr{Key: l.groupKey, Value: slog.GroupValue(attrs...)})
+	if c.groupKey != "" {
+		return append(l.contextAttrs(ctx), slog.Attr{Key: c.groupKey, Value: slog.GroupValue(attrs...)})
 	}
 
 	return append(l.contextAttrs(ctx), attrs...)
@@ -182,13 +186,14 @@ func (l *Logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func(
 
 // contextAttrs extracts attributes from context
 func (l *Logger) contextAttrs(ctx context.Context) []slog.Attr {
+	c := l.cfg
 	var attrs []slog.Attr
-	if l.contextExtractor != nil {
-		attrs = l.contextExtractor(ctx)
+	if c.contextExtractor != nil {
+		attrs = c.contextExtractor(ctx)
 	}
 	// sorted for a deterministic attribute order across log lines
-	for _, ak := range slices.Sorted(maps.Keys(l.contextKeys)) {
-		if val := ctx.Value(l.contextKeys[ak]); val != nil {
+	for _, ak := range slices.Sorted(maps.Keys(c.contextKeys)) {
+		if val := ctx.Value(c.contextKeys[ak]); val != nil {
 			attrs = append(attrs, slog.Any(ak, val))
 		}
 	}
@@ -197,5 +202,5 @@ func (l *Logger) contextAttrs(ctx context.Context) []slog.Attr {
 
 // enabled reports whether the logger is enabled at the given level
 func (l *Logger) enabled(ctx context.Context, lvl slog.Level) bool {
-	return !l.silent && l.slogHandler.Enabled(ctx, lvl)
+	return !l.cfg.silent && l.cfg.slogHandler.Enabled(ctx, lvl)
 }
