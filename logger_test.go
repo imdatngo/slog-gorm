@@ -37,7 +37,7 @@ func TestNew(t *testing.T) {
 func TestNewWithConfig(t *testing.T) {
 	t.Run("custom config", func(t *testing.T) {
 		h := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})
-		want := &config{
+		want := &Config{
 			slogHandler:               h,
 			slowThreshold:             time.Second,
 			ignoreRecordNotFoundError: true,
@@ -77,14 +77,28 @@ func TestNewWithConfig(t *testing.T) {
 			WithSlowMsg("Hmmm...").
 			WithErrorMsg("Shit!!")
 		l := NewWithConfig(cfg)
-		assert.Equal(t, want, l.config)
+		assert.Equal(t, want, l.Config)
+	})
+
+	t.Run("panic with nil config", func(t *testing.T) {
+		assert.PanicsWithValue(t, "nil config", func() { NewWithConfig(nil) })
+	})
+
+	t.Run("config is cloned", func(t *testing.T) {
+		cfg := NewConfig(slog.Default().Handler())
+		l1 := NewWithConfig(cfg)
+		cfg.WithSilent(true).WithContextKeys(map[string]any{"req_id": "id"})
+		l2 := NewWithConfig(cfg)
+		assert.False(t, l1.silent)
+		assert.Empty(t, l1.contextKeys)
+		assert.True(t, l2.silent)
 	})
 }
 
 func Test_logger_LogMode(t *testing.T) {
 	t.Run("Silent", func(t *testing.T) {
 		l := New()
-		nl := l.LogMode(gormlogger.Silent).(*logger)
+		nl := l.LogMode(gormlogger.Silent).(*Logger)
 		assert.NotSame(t, l, nl)
 		assert.Equal(t, false, l.traceAll)
 		assert.Equal(t, false, l.silent)
@@ -93,7 +107,7 @@ func Test_logger_LogMode(t *testing.T) {
 	})
 	t.Run("Info", func(t *testing.T) {
 		l := New()
-		nl := l.LogMode(gormlogger.Info).(*logger)
+		nl := l.LogMode(gormlogger.Info).(*Logger)
 		assert.NotSame(t, l, nl)
 		assert.Equal(t, false, l.traceAll)
 		assert.Equal(t, false, l.silent)
@@ -102,17 +116,33 @@ func Test_logger_LogMode(t *testing.T) {
 	})
 	t.Run("Warn", func(t *testing.T) {
 		l := New()
-		nl := l.LogMode(gormlogger.Warn).(*logger)
+		nl := l.LogMode(gormlogger.Warn).(*Logger)
 		assert.Same(t, l, nl)
 		assert.Equal(t, false, nl.traceAll)
 		assert.Equal(t, false, nl.silent)
 	})
 	t.Run("Error", func(t *testing.T) {
 		l := New()
-		nl := l.LogMode(gormlogger.Error).(*logger)
+		nl := l.LogMode(gormlogger.Error).(*Logger)
 		assert.Same(t, l, nl)
 		assert.Equal(t, false, nl.traceAll)
 		assert.Equal(t, false, nl.silent)
+	})
+	t.Run("Warn un-silences a silent logger", func(t *testing.T) {
+		l := NewWithConfig(NewConfig(slog.Default().Handler()).WithSilent(true).WithTraceAll(true))
+		nl := l.LogMode(gormlogger.Warn).(*Logger)
+		assert.NotSame(t, l, nl)
+		assert.Equal(t, true, l.silent)
+		assert.Equal(t, false, nl.silent)
+		assert.Equal(t, false, nl.traceAll)
+	})
+	t.Run("Error un-silences a silent logger", func(t *testing.T) {
+		l := NewWithConfig(NewConfig(slog.Default().Handler()).WithSilent(true))
+		nl := l.LogMode(gormlogger.Error).(*Logger)
+		assert.NotSame(t, l, nl)
+		assert.Equal(t, true, l.silent)
+		assert.Equal(t, false, nl.silent)
+		assert.Equal(t, false, nl.traceAll)
 	})
 }
 
@@ -135,14 +165,14 @@ func Test_logger(t *testing.T) {
 	tests := []struct {
 		name   string
 		logLvl slog.Leveler
-		config func(slog.Handler) *config
-		log    func(*logger)
+		config func(slog.Handler) *Config
+		log    func(*Logger)
 		checks []check
 	}{
 		{
 			name:   "info",
 			config: NewConfig,
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				l.Info(context.Background(), "info msg: %v", "hello world!")
 			},
 			checks: []check{
@@ -153,10 +183,10 @@ func Test_logger(t *testing.T) {
 		},
 		{
 			name: "with context key",
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithContextKeys(map[string]any{"req_id": ctxKey("id")})
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				ctx := context.Background()
 				ctx = context.WithValue(ctx, ctxKey("id"), "123")
 				l.Info(ctx, "hello world!")
@@ -170,7 +200,7 @@ func Test_logger(t *testing.T) {
 		},
 		{
 			name: "with context extractor",
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithContextExtractor(func(ctx context.Context) []slog.Attr {
 					return []slog.Attr{
 						slog.String("trace_id", ctx.Value(ctxKey("trace_id")).(string)),
@@ -178,7 +208,7 @@ func Test_logger(t *testing.T) {
 					}
 				})
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				ctx := context.Background()
 				ctx = context.WithValue(ctx, ctxKey("trace_id"), "abc123")
 				ctx = context.WithValue(ctx, ctxKey("span_id"), "112233")
@@ -196,7 +226,7 @@ func Test_logger(t *testing.T) {
 			name:   "warn",
 			logLvl: slog.LevelWarn,
 			config: NewConfig,
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				l.Info(context.Background(), "this should be %s", "ignored")
 				l.Warn(context.Background(), "warn msg")
 			},
@@ -210,7 +240,7 @@ func Test_logger(t *testing.T) {
 			name:   "error",
 			logLvl: slog.LevelError,
 			config: NewConfig,
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				l.Info(context.Background(), "this should be %s", "ignored")
 				l.Warn(context.Background(), "warn msg is ignored as well")
 				l.Error(nil, "no context")
@@ -224,10 +254,10 @@ func Test_logger(t *testing.T) {
 		{
 			name:   "silent",
 			logLvl: slog.LevelInfo,
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithSilent(true)
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				l.Info(context.Background(), "this should be %s", "ignored")
 				l.Warn(context.Background(), "warn msg is ignored as well")
 				l.Error(context.Background(), "no error")
@@ -240,7 +270,7 @@ func Test_logger(t *testing.T) {
 		{
 			name:   "trace error",
 			config: NewConfig,
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				fc := func() (string, int64) {
 					return "SELECT * FROM users", 69
 				}
@@ -262,10 +292,10 @@ func Test_logger(t *testing.T) {
 		},
 		{
 			name: "trace slow query",
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithSlowThreshold(2 * time.Second)
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				fc := func() (string, int64) {
 					return "SELECT * FROM users WHERE true", 6969
 				}
@@ -284,10 +314,10 @@ func Test_logger(t *testing.T) {
 		},
 		{
 			name: "trace all",
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithTraceAll(true)
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				fc := func() (string, int64) {
 					return "SELECT * FROM profiles", 0
 				}
@@ -305,10 +335,10 @@ func Test_logger(t *testing.T) {
 		},
 		{
 			name: "trace all with group",
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithTraceAll(true).WithGroupKey("db")
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				fc := func() (string, int64) {
 					return "SELECT * FROM profiles", 0
 				}
@@ -328,10 +358,10 @@ func Test_logger(t *testing.T) {
 		},
 		{
 			name: "trace slow should not log error if not asked",
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithIgnoreRecordNotFoundError(true)
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				fc := func() (string, int64) {
 					return "SELECT * FROM users", 0
 				}
@@ -346,10 +376,10 @@ func Test_logger(t *testing.T) {
 		},
 		{
 			name: "trace all should not log error if not asked",
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithIgnoreRecordNotFoundError(true).WithTraceAll(true)
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				fc := func() (string, int64) {
 					return "SELECT * FROM users", 0
 				}
@@ -364,10 +394,10 @@ func Test_logger(t *testing.T) {
 		},
 		{
 			name: "full source path",
-			config: func(h slog.Handler) *config {
+			config: func(h slog.Handler) *Config {
 				return NewConfig(h).WithTraceAll(true).WithFullSourcePath(true)
 			},
-			log: func(l *logger) {
+			log: func(l *Logger) {
 				fc := func() (string, int64) {
 					return "SELECT * FROM sources", 1
 				}
@@ -375,6 +405,56 @@ func Test_logger(t *testing.T) {
 			},
 			checks: []check{
 				hasSource("file", 3, true),
+			},
+		},
+		{
+			name: "trace with context attrs",
+			config: func(h slog.Handler) *Config {
+				return NewConfig(h).WithTraceAll(true).WithContextKeys(map[string]any{"req_id": ctxKey("id")})
+			},
+			log: func(l *Logger) {
+				ctx := context.WithValue(context.Background(), ctxKey("id"), "123")
+				fc := func() (string, int64) {
+					return "SELECT * FROM users", 1
+				}
+				l.Trace(ctx, time.Now().Add(-1*time.Millisecond), fc, nil)
+			},
+			checks: []check{
+				hasAttr(slog.MessageKey, "Query OK"),
+				hasAttr("req_id", "123"),
+				hasAttr("query", "SELECT * FROM users"),
+			},
+		},
+		{
+			name: "source key dropped",
+			config: func(h slog.Handler) *Config {
+				return NewConfig(h).WithTraceAll(true).WithSourceKey("")
+			},
+			log: func(l *Logger) {
+				fc := func() (string, int64) {
+					return "SELECT * FROM users", 1
+				}
+				l.Trace(context.Background(), time.Now().Add(-1*time.Millisecond), fc, nil)
+			},
+			checks: []check{
+				hasAttr(slog.MessageKey, "Query OK"),
+				missingKey("file"),
+				hasAttr("query", "SELECT * FROM users"),
+			},
+		},
+		{
+			name: "slow threshold disabled",
+			config: func(h slog.Handler) *Config {
+				return NewConfig(h).WithSlowThreshold(0)
+			},
+			log: func(l *Logger) {
+				fc := func() (string, int64) {
+					return "SELECT * FROM users", 1
+				}
+				l.Trace(context.Background(), time.Now().Add(-10*time.Second), fc, nil)
+			},
+			checks: []check{
+				emptyLogs(),
 			},
 		},
 	}
@@ -433,14 +513,35 @@ func Test_logger_ParamsFilter(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := &logger{
-				config: &config{parameterizedQueries: tt.parameterizedQueries},
+			l := &Logger{
+				Config: &Config{parameterizedQueries: tt.parameterizedQueries},
 			}
 			gotSql, gotVars := l.ParamsFilter(context.Background(), tt.args.sql, tt.args.params...)
 			assert.Equal(t, tt.wantSql, gotSql)
 			assert.Equal(t, tt.wantVars, gotVars)
 		})
 	}
+}
+
+// ctxReadingHandler reads the context in Enabled, like a per-request level override
+// handler would. It panics if given a nil context.
+type ctxReadingHandler struct{ slog.Handler }
+
+func (h ctxReadingHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
+	_ = ctx.Value(ctxKey("k"))
+	return h.Handler.Enabled(ctx, lvl)
+}
+
+func Test_logger_nilContext(t *testing.T) {
+	var buf bytes.Buffer
+	h := ctxReadingHandler{slog.NewJSONHandler(&buf, nil)}
+	l := NewWithConfig(NewConfig(h).WithTraceAll(true))
+	assert.NotPanics(t, func() {
+		l.Info(nil, "info")
+		l.Warn(nil, "warn")
+		l.Error(nil, "error")
+		l.Trace(nil, time.Now(), func() (string, int64) { return "SELECT 1", 1 }, nil)
+	})
 }
 
 type ctxKey string

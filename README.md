@@ -180,7 +180,7 @@ tx := db.Session(&gorm.Session{Logger: newLogger})
 silentTx := db.Session(&gorm.Session{Logger: db.Logger.LogMode(gormlogger.Silent)})
 ```
 
-> **`LogMode` only responds to `Info` and `Silent`.** Passing `gormlogger.Error` or `gormlogger.Warn` returns the logger unchanged, by design — which of those two levels actually gets written is your slog handler's decision, not gorm's. So `LogMode(gormlogger.Warn)` will *not* quiet a logger that is already tracing every query; use `LogMode(gormlogger.Silent)` or set the level on the handler.
+> **`LogMode` treats `Error` and `Warn` as nothing more than "not silent".** Which of those two levels actually gets written is your slog handler's decision, not gorm's, so passing `gormlogger.Error` or `gormlogger.Warn` to a regular logger returns it unchanged; on a silent logger it returns an un-silenced clone with trace-all off (per gorm's contract, both are more verbose than `Silent`). This also means `LogMode(gormlogger.Warn)` will *not* quiet a logger that is already tracing every query; use `LogMode(gormlogger.Silent)` or set the level on the handler.
 
 ### Keep parameter values out of your logs
 

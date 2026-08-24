@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path"
 	"runtime"
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
@@ -14,85 +16,119 @@ import (
 	"gorm.io/gorm/utils"
 )
 
-// New creates a new logger with default config
-func New() *logger {
+// New creates a new logger with default config.
+//
+// It snapshots slog.Default().Handler() at construction, so call it after any
+// slog.SetDefault, or use NewWithConfig with the handler of your choice.
+func New() *Logger {
 	return NewWithConfig(NewConfig(slog.Default().Handler()))
 }
 
-// NewWithConfig creates a new logger with given config
-func NewWithConfig(config *config) *logger {
-	return &logger{
-		config,
+// NewWithConfig creates a new logger with the given non-nil config.
+//
+// The config is cloned, so changes made to it afterwards do not affect the logger.
+func NewWithConfig(config *Config) *Logger {
+	if config == nil {
+		panic("nil config")
+	}
+	return &Logger{
+		config.clone(),
 	}
 }
 
-type logger struct {
-	*config
+// Logger is a gorm logger.Interface implementation backed by a slog.Handler.
+type Logger struct {
+	*Config
 }
 
 // ensure our logger implements gormlogger.Interface
-var _ gormlogger.Interface = (*logger)(nil)
+var _ gormlogger.Interface = (*Logger)(nil)
 
 // LogMode log mode
-func (l *logger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
+func (l *Logger) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 	// This function will switch to logging all queries, whenever the level is set to Info.
 	// It's to support the Debug() function of gorm which sets the log level to info for subsequent queries, see:
 	//   https://gorm.io/docs/session.html#Debug
 
-	// Note: Error and Warn levels are ignored as the log level is managed by slog already.
-	if level == gormlogger.Error || level == gormlogger.Warn {
+	// Note: Error and Warn levels don't change the verbosity as the log level is managed by slog already,
+	// except that they clear silent mode: per gorm's contract they are more verbose than Silent.
+	if (level == gormlogger.Error || level == gormlogger.Warn) && !l.silent {
 		return l
 	}
 
 	// clone logger for session mode
-	nc := l.clone()
-	nl := NewWithConfig(nc.WithTraceAll(level == gormlogger.Info).WithSilent(level == gormlogger.Silent))
-	return nl
+	nc := l.clone().WithTraceAll(level == gormlogger.Info).WithSilent(level == gormlogger.Silent)
+	return &Logger{nc}
 }
 
 // Info logs info message
-func (l *logger) Info(ctx context.Context, format string, args ...any) {
+func (l *Logger) Info(ctx context.Context, format string, args ...any) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if l.enabled(ctx, slog.LevelInfo) {
 		l.log(ctx, slog.LevelInfo, fmt.Sprintf(format, args...), l.contextAttrs(ctx)...)
 	}
 }
 
 // Warn logs warn message
-func (l *logger) Warn(ctx context.Context, format string, args ...any) {
+func (l *Logger) Warn(ctx context.Context, format string, args ...any) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if l.enabled(ctx, slog.LevelWarn) {
 		l.log(ctx, slog.LevelWarn, fmt.Sprintf(format, args...), l.contextAttrs(ctx)...)
 	}
 }
 
 // Error logs error message
-func (l *logger) Error(ctx context.Context, format string, args ...any) {
+func (l *Logger) Error(ctx context.Context, format string, args ...any) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if l.enabled(ctx, slog.LevelError) {
 		l.log(ctx, slog.LevelError, fmt.Sprintf(format, args...), l.contextAttrs(ctx)...)
 	}
 }
 
 // Trace logs sql message
-func (l *logger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+func (l *Logger) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	if l.silent {
 		return
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	elapsed := time.Since(begin)
+	var (
+		level    slog.Level
+		msg      string
+		traceErr error
+		slow     bool
+	)
 	switch {
 	case err != nil && l.enabled(ctx, slog.LevelError) && (!errors.Is(err, gorm.ErrRecordNotFound) || !l.ignoreRecordNotFoundError):
-		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), err, false)
-		l.log(ctx, slog.LevelError, l.errorMsg, attrs...)
+		level, msg, traceErr = slog.LevelError, l.errorMsg, err
 	case l.slowThreshold != 0 && elapsed > l.slowThreshold && l.enabled(ctx, slog.LevelWarn):
-		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), nil, true)
-		l.log(ctx, slog.LevelWarn, l.slowMsg, attrs...)
+		level, msg, slow = slog.LevelWarn, l.slowMsg, true
 	case l.traceAll && l.enabled(ctx, slog.LevelInfo):
-		attrs := l.traceAttrs(ctx, elapsed, fc, utils.FileWithLineNum(), nil, false)
-		l.log(ctx, slog.LevelInfo, l.okMsg, attrs...)
+		level, msg = slog.LevelInfo, l.okMsg
+	default:
+		return
 	}
+
+	// utils.FileWithLineNum walks the stack relative to this frame, so it must be
+	// called directly from Trace, and only when the source attribute is wanted.
+	var file string
+	if l.sourceKey != "" {
+		file = utils.FileWithLineNum()
+	}
+	l.log(ctx, level, msg, l.traceAttrs(ctx, elapsed, fc, file, traceErr, slow)...)
 }
 
 // ParamsFilter filter params
-func (l *logger) ParamsFilter(_ context.Context, sql string, params ...interface{}) (string, []interface{}) {
+func (l *Logger) ParamsFilter(_ context.Context, sql string, params ...interface{}) (string, []interface{}) {
 	if l.parameterizedQueries {
 		return sql, nil
 	}
@@ -100,20 +136,17 @@ func (l *logger) ParamsFilter(_ context.Context, sql string, params ...interface
 }
 
 // log adds context attributes and logs a message with the given slog level
-func (l *logger) log(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
+func (l *Logger) log(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
 	var pcs [1]uintptr
 	// skip [runtime.Callers, this function, this function's caller]
 	runtime.Callers(3, pcs[:])
 	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
 	r.AddAttrs(attrs...)
 
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	_ = l.slogHandler.Handle(ctx, r)
 }
 
-func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func() (string, int64), file string, err error, slow bool) []slog.Attr {
+func (l *Logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func() (string, int64), file string, err error, slow bool) []slog.Attr {
 	sql, rows := fc()
 
 	attrs := make([]slog.Attr, 0, 5)
@@ -148,17 +181,14 @@ func (l *logger) traceAttrs(ctx context.Context, elapsed time.Duration, fc func(
 }
 
 // contextAttrs extracts attributes from context
-func (l *logger) contextAttrs(ctx context.Context) []slog.Attr {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
+func (l *Logger) contextAttrs(ctx context.Context) []slog.Attr {
 	var attrs []slog.Attr
 	if l.contextExtractor != nil {
 		attrs = l.contextExtractor(ctx)
 	}
-	for ak, ck := range l.contextKeys {
-		if val := ctx.Value(ck); val != nil {
+	// sorted for a deterministic attribute order across log lines
+	for _, ak := range slices.Sorted(maps.Keys(l.contextKeys)) {
+		if val := ctx.Value(l.contextKeys[ak]); val != nil {
 			attrs = append(attrs, slog.Any(ak, val))
 		}
 	}
@@ -166,6 +196,6 @@ func (l *logger) contextAttrs(ctx context.Context) []slog.Attr {
 }
 
 // enabled reports whether the logger is enabled at the given level
-func (l *logger) enabled(ctx context.Context, lvl slog.Level) bool {
+func (l *Logger) enabled(ctx context.Context, lvl slog.Level) bool {
 	return !l.silent && l.slogHandler.Enabled(ctx, lvl)
 }

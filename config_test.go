@@ -14,9 +14,9 @@ func TestNewConfig(t *testing.T) {
 	})
 
 	t.Run("default config", func(t *testing.T) {
-		var cfg *config
+		var cfg *Config
 		assert.NotPanics(t, func() { cfg = NewConfig(slog.Default().Handler()) })
-		assert.Equal(t, &config{
+		assert.Equal(t, &Config{
 			slogHandler:      slog.Default().Handler(),
 			slowThreshold:    200 * time.Millisecond,
 			errorKey:         "error",
